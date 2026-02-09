@@ -2,7 +2,7 @@ import re
 from app.core.config import settings
 from app.adapters.base import BaseAdapter
 from app.adapters.utils import split_text_smartly, make_meta_request
-
+import httpx
 class WhatsAppAdapter(BaseAdapter):
     def __init__(self):
         self.version = "v24.0"
@@ -75,3 +75,23 @@ class WhatsAppAdapter(BaseAdapter):
             }
         }
         return make_meta_request("POST", self.base_url, self.token, payload)
+    
+    # Fungsi Baru: Mendapatkan URL Media dari Meta
+    async def get_media_url(self, media_id: str):
+        url = f"https://graph.facebook.com/{self.version}/{media_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                return resp.json().get("url")
+        return None
+
+    # Fungsi Baru: Download Binary Content
+    async def download_media(self, media_url: str):
+        headers = {"Authorization": f"Bearer {self.token}"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(media_url, headers=headers)
+            if resp.status_code == 200:
+                return resp.content # Binary data
+        return None

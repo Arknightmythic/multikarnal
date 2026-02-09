@@ -8,6 +8,11 @@ class IncomingMessage(BaseModel):
     query: str
     conversation_id: Optional[str] = None
     platform: PlatformType = "generic"
+    
+    # --- TAMBAHAN BARU ---
+    type: str = "text"  # Default 'text', bisa 'image', 'file', dll.
+    # ---------------------
+    
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     model_config = ConfigDict(from_attributes=True)

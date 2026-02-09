@@ -43,3 +43,21 @@ class ChatbotClient:
             except Exception as e:
                 logger.error(f"Unexpected error in ChatbotService: {e}")
                 return {"error": str(e), "answer": "Maaf, terjadi kesalahan yang tidak terduga."}
+            
+
+    async def upload_media_to_main(self, file_content: bytes, filename: str, user_id: str, platform: str):
+        url = f"{self.api_url.replace('/chat/bot', '/chat/media')}" # Hack sedikit URL-nya atau set di config
+        
+        # Siapkan Multipart Form Data
+        files = {'file': (filename, file_content, 'image/jpeg')} # Mime type bisa dinamis
+        data = {
+            'platform': platform,
+            'external_user_id': user_id
+        }
+        
+        # Header khusus (Internal Key tetap perlu, tapi Content-Type jangan di-set manual saat upload file)
+        upload_headers = {"x-internal-key": settings.INTERNAL_API_KEY}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, data=data, files=files, headers=upload_headers)
+            return response.json()

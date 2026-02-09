@@ -14,20 +14,43 @@ def parse_whatsapp_payload(data: Dict[str, Any]) -> Optional[IncomingMessage]:
         message = value["messages"][0]
         sender_id = message.get("from")
         msg_id = message.get("id") 
+        sender_name = value.get("contacts", [{}])[0].get("profile", {}).get("name", "Unknown")
 
         if str(sender_id) == str(settings.WHATSAPP_PHONE_NUMBER_ID):
             return None
 
         msg_type = message.get("type")
         
+        # --- LOGIC TEXT ---
         if msg_type == "text":
             return IncomingMessage(
                 platform_unique_id=sender_id,
                 query=message["text"]["body"],
                 platform="whatsapp",
-                metadata={"phone": sender_id, "message_id": msg_id}
+                type="text",
+                metadata={"phone": sender_id, "message_id": msg_id, "sender_name": sender_name}
+            )
+        
+        # --- LOGIC GAMBAR (BARU) ---
+        elif msg_type == "image":
+            image_data = message.get("image", {})
+            media_id = image_data.get("id")
+            caption = image_data.get("caption", "") # Bisa kosong
+            
+            return IncomingMessage(
+                platform_unique_id=sender_id,
+                query=caption if caption else "[IMAGE SENT]", # Gunakan caption jika ada, atau placeholder
+                platform="whatsapp",
+                type="image",
+                metadata={
+                    "phone": sender_id, 
+                    "message_id": msg_id, 
+                    "media_id": media_id,
+                    "sender_name": sender_name
+                }
             )
             
+        # --- LOGIC INTERACTIVE (BUTTON) ---
         elif msg_type == "interactive":
             interactive = message.get("interactive", {})
             if interactive.get("type") == "button_reply":
@@ -36,7 +59,8 @@ def parse_whatsapp_payload(data: Dict[str, Any]) -> Optional[IncomingMessage]:
                     platform_unique_id=sender_id,
                     query=f"FEEDBACK_EVENT:{btn_id}",
                     platform="whatsapp",
-                    metadata={"is_feedback": True, "payload": btn_id, "message_id": msg_id}
+                    type="text",
+                    metadata={"is_feedback": True, "payload": btn_id, "message_id": msg_id, "sender_name": sender_name}
                 )
                 
     except (IndexError, KeyError, AttributeError):
