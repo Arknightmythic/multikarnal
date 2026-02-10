@@ -1,3 +1,4 @@
+from app.adapters.instagram import InstagramAdapter
 from fastapi import APIRouter, Depends, BackgroundTasks, Request, Query, Response, HTTPException
 from app.core.config import settings
 from app.schemas.models import IncomingMessage
@@ -30,18 +31,23 @@ def verify_instagram(
         return Response(content=challenge, media_type="text/plain")
     raise HTTPException(status_code=403, detail="Verification failed")
 
-@router.post("/whatsapp/webhook")
-async def whatsapp_webhook(
+@router.post("/instagram/webhook")
+async def instagram_webhook(
     request: Request,
     bg_tasks: BackgroundTasks,
     orchestrator: MessageOrchestrator = Depends(get_orchestrator)
 ):
     data = await request.json()
-    msg = parse_whatsapp_payload(data)
+    
+    # --- PERUBAHAN HANYA DI SINI ---
+    # Kita menggunakan Adapter langsung untuk parsing, karena di sanalah logika gambar berada.
+    adapter = InstagramAdapter()
+    msg = adapter.parse_webhook_payload(data)
+    # -------------------------------
     
     if msg:
         if msg.metadata and msg.metadata.get("is_feedback"):
-            logger.info(f"Feedback Event Received (WA): {msg.metadata['payload']}")
+            logger.info(f"Feedback Event Received (IG): {msg.metadata['payload']}")
             bg_tasks.add_task(orchestrator.handle_feedback, msg)
         else:
             bg_tasks.add_task(orchestrator.process_message, msg)
@@ -55,6 +61,7 @@ async def instagram_webhook(
     orchestrator: MessageOrchestrator = Depends(get_orchestrator)
 ):
     data = await request.json()
+    
     msg = parse_instagram_payload(data)
     
     if msg:

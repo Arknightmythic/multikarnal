@@ -74,27 +74,52 @@ def parse_instagram_payload(data: Dict[str, Any]) -> Optional[IncomingMessage]:
         
         sender_id = messaging.get("sender", {}).get("id")
         
+        # Filter pesan dari bot sendiri (Echo)
         if str(sender_id) == str(settings.INSTAGRAM_CHATBOT_ID):
             return None
 
         message = messaging.get("message", {})
         msg_id = message.get("mid") 
         
+        # 1. LOGIC FEEDBACK / QUICK REPLY
         if "quick_reply" in message:
             payload = message["quick_reply"].get("payload")
             return IncomingMessage(
                 platform_unique_id=sender_id,
                 query=f"FEEDBACK_EVENT:{payload}",
                 platform="instagram",
+                type="text",
                 metadata={"is_feedback": True, "payload": payload, "message_id": msg_id}
             )
 
+        # 2. LOGIC GAMBAR (BARU DITAMBAHKAN)
+        # Instagram mengirim gambar dalam field 'attachments'
+        if "attachments" in message:
+            for attachment in message["attachments"]:
+                if attachment["type"] == "image":
+                    # Instagram langsung memberikan URL, bukan ID media
+                    image_url = attachment["payload"].get("url")
+                    
+                    return IncomingMessage(
+                        platform_unique_id=sender_id,
+                        query="[IMAGE]", # Placeholder text
+                        platform="instagram",
+                        type="image",
+                        metadata={
+                            "message_id": msg_id,
+                            "media_id": image_url, # Simpan URL sebagai media_id
+                            "sender_name": "Instagram User"
+                        }
+                    )
+
+        # 3. LOGIC TEXT BIASA
         if "text" in message:
             if message.get("is_echo"): return None
             return IncomingMessage(
                 platform_unique_id=sender_id,
                 query=message["text"],
                 platform="instagram",
+                type="text",
                 metadata={"message_id": msg_id}
             )
             

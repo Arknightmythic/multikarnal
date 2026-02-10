@@ -8,7 +8,7 @@ from app.adapters.base import BaseAdapter
 from app.repositories.conversation import ConversationRepository
 from app.core.config import settings
 import logging
-
+import uuid
 logger = logging.getLogger("service.orchestrator")
 
 RESET_KEYWORDS: List[str] = [
@@ -73,29 +73,36 @@ class MessageOrchestrator:
             pass
 
         if msg.type == "image" and msg.metadata.get("media_id"):
-             adapter = self.adapters.get(msg.platform)
-             
-             # 1. Dapatkan URL Media dari Meta
-             media_url = await adapter.get_media_url(msg.metadata.get("media_id"))
-             
-             if media_url:
-                 # 2. Download Gambar
-                 image_binary = await adapter.download_media(media_url)
-                 
-                 if image_binary:
-                     # 3. Upload ke BE Main
-                     upload_resp = await self.chatbot.upload_media_to_main(
-                         file_content=image_binary,
-                         filename=f"wa_image_{msg.metadata.get('media_id')}.jpg",
-                         user_id=user_id,
-                         platform=msg.platform
-                     )
-                     
-                     logger.info(f"Image uploaded to BE Main: {upload_resp}")
-                     
-                     # 4. (Opsional) Kirim link gambar ke Dify sebagai konteks
-                     # Ubah msg.query menjadi: "[USER MENGIRIM GAMBAR]: <url_gambar>"
-                     msg.query = f"[IMAGE_UPLOADED] {upload_resp.get('url')}"
+                adapter = self.adapters.get(msg.platform)
+                
+                # 1. Dapatkan URL Media dari Meta
+                media_url = await adapter.get_media_url(msg.metadata.get("media_id"))
+                
+                if media_url:
+                    # 2. Download Gambar
+                    image_binary = await adapter.download_media(media_url)
+                    
+                    if image_binary:
+                        # --- PERBAIKAN: Gunakan UUID agar nama file pendek & aman ---
+                        short_id = str(uuid.uuid4())[:8] # Ambil 8 karakter acak saja cukup
+                        timestamp = int(time.time())
+                        
+                        # Format: instagram_17382912_ad3f12.jpg
+                        safe_filename = f"{msg.platform}_{timestamp}_{short_id}.jpg"
+                        # ------------------------------------------------------------
+
+                        # 3. Upload ke BE Main
+                        upload_resp = await self.chatbot.upload_media_to_main(
+                            file_content=image_binary,
+                            filename=safe_filename,
+                            user_id=user_id,
+                            platform=msg.platform
+                        )
+                        
+                        logger.info(f"Image uploaded to BE Main: {upload_resp}")
+                        
+                        # 4. Kirim link gambar ke Dify sebagai konteks
+                        msg.query = f"[IMAGE_UPLOADED] {upload_resp.get('url')}"
 
         # PERUBAHAN: Panggil chatbot dengan parameter baru dan AWAIT
         # Parameter: message, conversation_id, user_id, platform, user_name
