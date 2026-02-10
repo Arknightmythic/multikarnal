@@ -30,3 +30,8 @@ class OutgoingMessage(BaseModel):
     conversation_id: Optional[str] = None
     thread_key: Optional[str] = None
     platform: Optional[PlatformType] = None
+
+class OutboundMessageRequest(BaseModel):
+    recipient_id: str
+    message: str
+    platform: str

@@ -1,7 +1,7 @@
 from app.adapters.instagram import InstagramAdapter
 from fastapi import APIRouter, Depends, BackgroundTasks, Request, Query, Response, HTTPException
 from app.core.config import settings
-from app.schemas.models import IncomingMessage
+from app.schemas.models import IncomingMessage, OutboundMessageRequest
 from app.api.dependencies import get_orchestrator
 from app.api.auth import verify_api_key
 from app.services.orchestrator import MessageOrchestrator
@@ -81,3 +81,23 @@ async def process_message_internal(
 ):
     bg_tasks.add_task(orchestrator.process_message, msg)
     return {"status": "queued"}
+
+router.post("/api/internal/send")
+async def send_internal_message(
+    request: OutboundMessageRequest,
+    orchestrator: MessageOrchestrator = Depends(get_orchestrator)
+):
+    """
+    Endpoint internal untuk menerima pesan dari BE Main (Agent) 
+    dan meneruskannya ke user via WhatsApp/Instagram.
+    """
+    try:
+        result = await orchestrator.send_outbound_message(
+            recipient_id=request.recipient_id,
+            message=request.message,
+            platform=request.platform
+        )
+        return {"status": "ok", "provider_response": result}
+    except Exception as e:
+        logger.error(f"Internal send error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

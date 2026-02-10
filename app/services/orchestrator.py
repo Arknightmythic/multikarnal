@@ -142,3 +142,25 @@ class MessageOrchestrator:
             adapter.send_typing_off(user_id)
         except Exception: 
             pass
+
+    async def send_outbound_message(self, recipient_id: str, message: str, platform: str):
+        """
+        Mengirim pesan dari Agent (BE Main) ke User (WA/IG).
+        """
+        adapter = self.adapters.get(platform)
+        
+        if not adapter:
+            logger.error(f"Platform {platform} not supported or adapter not loaded.")
+            return {"status": "error", "detail": "Platform not supported"}
+
+        try:
+            # Panggil fungsi send_message milik adapter (WA/IG)
+            # Note: send_message di adapter Anda bersifat synchronous, 
+            # tapi tidak masalah untuk traffic kecil.
+            result = adapter.send_message(recipient_id, message)
+            
+            logger.info(f"Outbound message sent to {platform} ({recipient_id}): {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to send outbound message: {e}")
+            raise e
