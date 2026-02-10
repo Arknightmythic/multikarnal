@@ -82,7 +82,7 @@ async def process_message_internal(
     bg_tasks.add_task(orchestrator.process_message, msg)
     return {"status": "queued"}
 
-router.post("/api/internal/send")
+@router.post("/api/internal/send")
 async def send_internal_message(
     request: OutboundMessageRequest,
     orchestrator: MessageOrchestrator = Depends(get_orchestrator)
