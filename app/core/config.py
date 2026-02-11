@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     INSTAGRAM_PAGE_ACCESS_TOKEN: Optional[str] = None
     INSTAGRAM_CHATBOT_ID: Optional[str] = None
     INSTAGRAM_VERIFY_TOKEN: Optional[str] = None
-
+    INSTAGRAM_PAGE_ID: Optional[str] = None
+    
     WHATSAPP_ACCESS_TOKEN: Optional[str] = None
     WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     WHATSAPP_VERIFY_TOKEN: Optional[str] = None

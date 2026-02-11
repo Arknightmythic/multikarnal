@@ -26,10 +26,25 @@ class InstagramAdapter(BaseAdapter):
         Menerjemahkan JSON Webhook Instagram menjadi IncomingMessage standar.
         """
         try:
+            if "entry" not in payload or not payload["entry"]:
+                return None
             entry = payload.get("entry", [])[0]
+            
+            if "messaging" not in entry or not entry["messaging"]:
+                return None
             messaging = entry.get("messaging", [])[0]
             
             sender_id = messaging.get("sender", {}).get("id")
+            if messaging.get("message", {}).get("is_echo"):
+                logger.info("Ignoring echo message from Instagram.")
+                return None
+
+            # 2. Cek apakah sender_id sama dengan ID Halaman/Bot kita sendiri
+            sender_id = messaging.get("sender", {}).get("id")
+            if sender_id == settings.INSTAGRAM_PAGE_ID: # Pastikan Anda punya setting ini
+                logger.info("Ignoring message from self.")
+                return None
+            
             if not sender_id:
                 return None
             

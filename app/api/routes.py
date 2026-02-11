@@ -54,19 +54,18 @@ async def instagram_webhook(
             
     return {"status": "ok"}
 
-@router.post("/instagram/webhook")
-async def instagram_webhook(
+@router.post("/whatsapp/webhook")
+async def whatsapp_webhook(
     request: Request,
     bg_tasks: BackgroundTasks,
     orchestrator: MessageOrchestrator = Depends(get_orchestrator)
 ):
     data = await request.json()
-    
-    msg = parse_instagram_payload(data)
+    msg = parse_whatsapp_payload(data)
     
     if msg:
         if msg.metadata and msg.metadata.get("is_feedback"):
-            logger.info(f"Feedback Event Received (IG): {msg.metadata['payload']}")
+            logger.info(f"Feedback Event Received (WA): {msg.metadata['payload']}")
             bg_tasks.add_task(orchestrator.handle_feedback, msg)
         else:
             bg_tasks.add_task(orchestrator.process_message, msg)
