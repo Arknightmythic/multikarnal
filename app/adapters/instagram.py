@@ -15,10 +15,49 @@ class InstagramAdapter(BaseAdapter):
     def __init__(self):
         self.version = "v24.0"
         self.base_url = f"https://graph.instagram.com/{self.version}/{settings.INSTAGRAM_CHATBOT_ID}/messages"
+        self.graph_url = f"https://graph.instagram.com/{self.version}"
         self.token = settings.INSTAGRAM_PAGE_ACCESS_TOKEN
 
     def _clean_id(self, user_id: str) -> str:
         return user_id.replace('@instagram.com', '').strip()
+    
+    def get_user_info(self, user_id: str) -> Dict[str, str]:
+        """
+        Mengambil detail user (Name, Username, Profile Pic) dari Instagram Graph API.
+        """
+        if not user_id or not self.token:
+            return {"name": "Instagram User", "username": "", "profile_pic": ""}
+
+        url = f"{self.graph_url}/{user_id}"
+        params = {
+            "fields": "name,username,profile_pic",
+            "access_token": self.token
+        }
+
+        try:
+            # Menggunakan httpx secara synchronous agar kompatibel dengan parse_webhook_payload
+            # Jika traffic sangat tinggi, pertimbangkan caching atau async flow terpisah.
+            with httpx.Client() as client:
+                response = client.get(url, params=params, timeout=10.0)
+                
+            if response.status_code == 200:
+                data = response.json()
+                # Prioritaskan username, lalu name, lalu default
+                username = data.get("username", "")
+                name = data.get("name", username) or "Instagram User"
+                profile_pic = data.get("profile_pic", "")
+                
+                return {
+                    "name": name, 
+                    "username": username,
+                    "profile_pic": profile_pic
+                }
+            else:
+                logger.warning(f"Gagal ambil profil IG {user_id}: {response.text}")
+                return {"name": "Instagram User", "username": "", "profile_pic": ""}
+        except Exception as e:
+            logger.error(f"Error fetching IG profile: {e}")
+            return {"name": "Instagram User", "username": "", "profile_pic": ""}
 
     # --- IMPLEMENTASI BARU: Parsing Webhook (Wajib untuk menerima pesan) ---
     def parse_webhook_payload(self, payload: Dict[str, Any]) -> Optional[IncomingMessage]:
@@ -35,19 +74,28 @@ class InstagramAdapter(BaseAdapter):
             messaging = entry.get("messaging", [])[0]
             
             sender_id = messaging.get("sender", {}).get("id")
+            
+            # Cek is_echo
             if messaging.get("message", {}).get("is_echo"):
                 logger.info("Ignoring echo message from Instagram.")
                 return None
 
-            # 2. Cek apakah sender_id sama dengan ID Halaman/Bot kita sendiri
-            sender_id = messaging.get("sender", {}).get("id")
-            if sender_id == settings.INSTAGRAM_PAGE_ID: # Pastikan Anda punya setting ini
+            # Cek self sender
+            if sender_id == settings.INSTAGRAM_PAGE_ID: 
                 logger.info("Ignoring message from self.")
                 return None
             
             if not sender_id:
                 return None
             
+            # --- UPDATE: Ambil Data Profil User ---
+            # Kita panggil fungsi helper yang baru dibuat di atas
+            user_info = self.get_user_info(sender_id)
+            sender_name = user_info["name"]
+            sender_username = user_info["username"]
+            sender_pic = user_info["profile_pic"]
+            # --------------------------------------
+
             # Cek tipe pesan
             if "message" in messaging:
                 message_data = messaging["message"]
@@ -57,18 +105,20 @@ class InstagramAdapter(BaseAdapter):
                 if "attachments" in message_data:
                     for attachment in message_data["attachments"]:
                         if attachment["type"] == "image":
-                            # Instagram langsung memberikan URL di webhook payload
                             image_url = attachment["payload"].get("url")
                             
                             return IncomingMessage(
                                 platform="instagram",
                                 platform_unique_id=sender_id,
                                 type="image",
-                                query="[IMAGE]", # Placeholder text
+                                query="[IMAGE]", 
                                 metadata={
                                     "message_id": msg_id,
-                                    "media_id": image_url, # Simpan URL di sini untuk diambil get_media_url nanti
-                                    "sender_name": "Instagram User" # IG API standar jarang kasih nama di webhook event ini
+                                    "media_id": image_url,
+                                    # Simpan nama asli di metadata
+                                    "sender_name": sender_name,
+                                    "sender_username": sender_username,
+                                    "sender_pic": sender_pic
                                 }
                             )
 
@@ -82,7 +132,10 @@ class InstagramAdapter(BaseAdapter):
                         query=text,
                         metadata={
                             "message_id": msg_id,
-                            "sender_name": "Instagram User"
+                            # Simpan nama asli di metadata
+                            "sender_name": sender_name,
+                            "sender_username": sender_username,
+                            "sender_pic": sender_pic
                         }
                     )
             
