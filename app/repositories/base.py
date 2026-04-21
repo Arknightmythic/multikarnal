@@ -33,6 +33,7 @@ class Database:
                     timeout=30,
                     kwargs=conn_args
                 )
+                logger.info(f"Database Connection Pool Initialized Successfully. with settings: {settings.DB_NAME}, {settings.DB_USER}, {settings.DB_HOST}, {settings.DB_PORT}")
             except Exception as e:
                 logger.error(f"DB Connection Failed: {e}")
                 raise

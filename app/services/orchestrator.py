@@ -106,13 +106,21 @@ class MessageOrchestrator:
 
         # PERUBAHAN: Panggil chatbot dengan parameter baru dan AWAIT
         # Parameter: message, conversation_id, user_id, platform, user_name
+
+        if msg.platform == "whatsapp":
+            resolved_user_name = user_id
+        else:
+            resolved_user_name = msg.metadata.get("sender_name", "Unknown")
+
         resp = await self.chatbot.send_message(
             message=msg.query,
             conversation_id=current_conv_id,
             user_id=user_id,
             platform=msg.platform,
-            user_name=msg.metadata.get("sender_name", "Unknown")
+            user_name=resolved_user_name
         )
+
+        logger.info(f"Chatbot response for user {user_id} on {msg.platform}: {resp}")
         
         if "error" in resp:
             # Jika ada error, ambil pesan error atau default answer

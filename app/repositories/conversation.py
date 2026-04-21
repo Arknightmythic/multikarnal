@@ -69,6 +69,6 @@ class ConversationRepository:
                         "DELETE FROM active_conversations WHERE platform_unique_id = %s",
                         (user_id,)
                     )
-                    logger.info(f"Session cleared for user {user_id}")
+                    logger.info(f"Session cleared for user {user_id} on table active_conversations.")
         except Exception as e:
             logger.error(f"Error clearing session for {user_id}: {e}")
