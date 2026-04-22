@@ -1,6 +1,8 @@
 # app/services/orchestrator.py
 
 import time
+import asyncio
+import httpx
 from typing import Dict, Any, List
 from app.schemas.models import IncomingMessage
 from app.services.chatbot import ChatbotClient
@@ -9,12 +11,16 @@ from app.repositories.conversation import ConversationRepository
 from app.core.config import settings
 import logging
 import uuid
+
 logger = logging.getLogger("service.orchestrator")
 
 RESET_KEYWORDS: List[str] = [
     "terima kasih", "terimakasih", "makasih", "trimakasih", "trims",
     "thank you", "thankyou", "thanks"
 ]
+
+# State memori untuk melacak user yang sedang menunggu OTP
+USER_STATES = {}
 
 class MessageOrchestrator:
     def __init__(
@@ -40,6 +46,16 @@ class MessageOrchestrator:
     def handle_feedback(self, msg: IncomingMessage):
         return
 
+    # Background task untuk membatalkan OTP jika 90 detik berlalu
+    async def timeout_otp_task(self, user_id: str, adapter: BaseAdapter):
+        await asyncio.sleep(90)
+        if USER_STATES.get(user_id) == "AWAITING_OTP":
+            del USER_STATES[user_id]
+            try:
+                adapter.send_message(user_id, "Anda belum memasukan otp, silahkan coba lagi.")
+            except Exception as e:
+                logger.error(f"Failed to send OTP timeout message: {e}")
+
     # PERUBAHAN UTAMA: Ubah menjadi ASYNC
     async def process_message(self, msg: IncomingMessage):
         adapter = self.adapters.get(msg.platform)
@@ -47,9 +63,36 @@ class MessageOrchestrator:
             return
 
         user_id = msg.platform_unique_id
-        
         clean_query = msg.query.strip().lower()
-        
+
+        # =====================================================================
+        # INTERSEPSI 1: Cek apakah user sedang ditagih input OTP
+        # =====================================================================
+        if USER_STATES.get(user_id) == "AWAITING_OTP":
+            del USER_STATES[user_id] # Hapus state agar next chat kembali normal
+            
+            # Asumsi Anda menambahkan MAIN_BE_URL di config, gunakan fallback jika belum ada
+            main_be_url = getattr(settings, "BE_OTP_PREFIX_URL", "http://localhost:8000") 
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{main_be_url}/verify-otp", json={
+                        "phone_number": user_id,
+                        "otp_code": msg.query.strip() # Kirim angka persis seperti input user
+                    })
+                    result = resp.json()
+                
+                if result.get("success"):
+                    adapter.send_message(user_id, "Verifikasi telah berhasil, silahkan coba kirim pertanyaan sebelumnya.")
+                else:
+                    adapter.send_message(user_id, "OTP gagal/kadaluwarsa.")
+            except Exception as e:
+                logger.error(f"Verify OTP Error: {e}")
+                adapter.send_message(user_id, "Terjadi kesalahan sistem saat memverifikasi OTP.")
+            
+            return # Hentikan eksekusi di sini, jangan teruskan ke Dify
+        # =====================================================================
+
         is_reset = any(keyword in clean_query for keyword in RESET_KEYWORDS)
 
         if is_reset:
@@ -104,9 +147,7 @@ class MessageOrchestrator:
                         # 4. Kirim link gambar ke Dify sebagai konteks
                         msg.query = f"[IMAGE_UPLOADED] {upload_resp.get('url')}"
 
-        # PERUBAHAN: Panggil chatbot dengan parameter baru dan AWAIT
-        # Parameter: message, conversation_id, user_id, platform, user_name
-
+        # Panggil chatbot dengan parameter baru dan AWAIT
         if msg.platform == "whatsapp":
             resolved_user_name = user_id
         else:
@@ -129,9 +170,43 @@ class MessageOrchestrator:
             adapter.send_message(user_id, fallback_msg)
         else:
             answer = resp.get("answer", "")
+            
+            # =====================================================================
+            # INTERSEPSI 2: Cek balasan Dify, apakah meminta OTP
+            # =====================================================================
+            if "<trigger_otp>" in answer:
+                main_be_url = getattr(settings, "BE_OTP_PREFIX_URL", "http://localhost:8000")
+                try:
+                    async with httpx.AsyncClient() as client:
+                        req_resp = await client.post(f"{main_be_url}/request-otp", json={
+                            "phone_number": user_id
+                        })
+                        req_result = req_resp.json()
+                    
+                    if req_result.get("valid_user"):
+                        email_target = req_result.get("email")
+                        
+                        # Ubah state user jadi menunggu OTP
+                        USER_STATES[user_id] = "AWAITING_OTP"
+                        
+                        # Jalankan countdown 90 detik di background
+                        asyncio.create_task(self.timeout_otp_task(user_id, adapter))
+                        
+                        reply_msg = f"Kode otp telah dikirimkan pada email {email_target}, mohon segera menyalinkan kode dan kirim kembali ke chat ini dalam 1 menit."
+                        adapter.send_message(user_id, reply_msg)
+                    else:
+                        adapter.send_message(user_id, "Mohon maaf permintaan anda ditolak.")
+                except Exception as e:
+                    logger.error(f"Request OTP Error: {e}")
+                    adapter.send_message(user_id, "Sistem gagal memproses permintaan OTP.")
+                
+                return # Stop eksekusi agar pesan balasan mentah Dify tidak dikirim ke user
+            # =====================================================================
+
+            # Jika balasan Dify normal (bukan trigger OTP)
             new_conv_id = resp.get("conversation_id")
             
-            # 4. Save new ID to DB (penting agar history berlanjut)
+            # Save new ID to DB (penting agar history berlanjut)
             if new_conv_id:
                 self.repo_conv.save_session(user_id, msg.platform, new_conv_id)
             
